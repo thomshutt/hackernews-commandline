@@ -1,0 +1,112 @@
+#!/usr/bin/env ruby
+require 'curses'
+require 'httparty'
+require 'nokogiri'
+include Curses
+
+@base_url = 'https://news.ycombinator.com/'
+
+class HttpPartyProxy
+  include HTTParty
+  #http_proxy('<proxy server>', <proxy port>)
+end
+
+def load_stories_from_server 
+  response = HttpPartyProxy.get(@base_url)
+  return if response.body == @previous_body
+  @previous_body = response.body
+  @stories = []
+  Nokogiri::HTML(response.body).css("td.title a").each do |node|
+    unless node.text == "More"
+      comments_url = node.parent.parent.next_sibling.css("a")[1]['href']
+      points = node.parent.parent.next_sibling.css("span").text.gsub(/ points/, '')
+      @stories << OpenStruct.new(:points => points, :title => node.text, :url => node["href"], :comments_url => @base_url + comments_url)
+    end
+    break if @stories.size == 20
+  end 
+end
+def load_comments_from_server(url)
+  Nokogiri::HTML(HttpPartyProxy.get(url)).css('span.comment').each do |node|
+    (@comments ||= []) << OpenStruct.new(:comment => node.text, :indent => node.parent.parent.css('img')[0]['width'].to_i)
+  end 
+end
+
+def init_screen
+  Curses.noecho # do not show typed keys
+  Curses.init_screen
+  Curses.stdscr.keypad(true) # enable arrow keys
+  Curses.start_color
+  Curses.init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK) 
+  Curses.init_pair(COLOR_RED, COLOR_WHITE, COLOR_RED)
+  Curses::timeout = 60 * 1000 # How often to fetch from the server if no keys have been pressed    
+  @status_line = Curses.lines
+  @status_line_LENGTH = Curses.cols
+  @cursor_pos = 0
+  begin
+    yield
+  ensure
+    Curses.close_screen
+  end
+end
+
+def draw_in_box(message, startline, padding)
+  l = @status_line_LENGTH - padding - 1
+  message.scan(/.{1,#{l}}\b|.{1,#{l}}/).map(&:strip).each do |part|
+    write(startline, 0, '|' * padding + " #{part}")
+    startline += 1
+  end
+end
+
+def draw_comments
+  
+end
+
+def draw_stories
+  index = 2 
+  @stories.each do |story|
+    if (index - 2 == @cursor_pos) 
+      Curses.attron(color_pair(COLOR_RED)|A_HORIZONTAL){
+        write(index, 2, story.title)
+      }
+    else 
+      write(index, 2, story.title)
+    end
+    index += 1
+  end
+end
+
+def write(line, column, text)
+  Curses.setpos(line, column)
+  Curses.addstr(text);
+end
+def pad(message)
+  message + " " * (@status_line_LENGTH - message.length)
+end
+
+def draw_bottom_bar
+  write(@status_line - 1, 0, "q=Quit r=Reload")
+end
+def draw_title_bar
+  Curses.attron(color_pair(COLOR_RED)|A_HORIZONTAL){
+    write(0, 0, pad(" Hacker News"))
+  }
+end
+
+init_screen do
+
+  load_stories_from_server
+
+  loop do
+    draw_stories 
+    draw_title_bar
+    draw_bottom_bar
+    case Curses.getch
+      when Curses::Key::UP then @cursor_pos = @cursor_pos - 1 < 0 ? @stories.length - 1 : @cursor_pos - 1 
+      when Curses::Key::DOWN then @cursor_pos = (@cursor_pos + 1) % @stories.length 
+      when ?r then load_from_server 
+      when ?q then break
+      else 
+    end
+  end
+
+end
