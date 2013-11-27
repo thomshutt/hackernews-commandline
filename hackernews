@@ -103,7 +103,7 @@ init_screen do
     case Curses.getch
       when Curses::Key::UP then @cursor_pos = @cursor_pos - 1 < 0 ? @stories.length - 1 : @cursor_pos - 1 
       when Curses::Key::DOWN then @cursor_pos = (@cursor_pos + 1) % @stories.length 
-      when ?r then load_from_server 
+      when ?r then load_stories_from_server 
       when ?q then break
       else 
     end
