@@ -2,19 +2,32 @@
 require 'curses'
 require 'httparty'
 require 'nokogiri'
+require "optparse"
+
 include Curses
 
 ENTER_KEY = 10
 
 @base_url = 'https://news.ycombinator.com/'
 
-class HttpPartyProxy
+class HTTPartyProxy
   include HTTParty
-  #http_proxy('<proxy server>', <proxy port>)
 end
 
+opts_parser = OptionParser.new do |opts|
+  opts.banner = "Usage: hackernews [--proxy-host <proxy_host>] [--proxy-port <proxy_port>]"
+  opts.on("-h", "--proxy-host proxy_host", "The proxy host to use") do |proxy_host|
+    @proxy_host = proxy_host
+  end  
+  opts.on("-p", "--proxy-port proxy_port", "The proxy port to use") do |proxy_port|
+    @proxy_port = proxy_port
+  end
+end
+opts_parser.parse!
+
 def load_stories_from_server 
-  response = HttpPartyProxy.get(@base_url)
+  HTTPartyProxy.http_proxy(@proxy_host, @proxy_port.to_i) if @proxy_host
+  response = HTTPartyProxy.get(@base_url)
   return if response.body == @previous_body
   @previous_body = response.body
   @stories = []
@@ -28,8 +41,9 @@ def load_stories_from_server
   end 
 end
 def load_comments_from_server(url)
-  Nokogiri::HTML(HttpPartyProxy.get(url)).css('span.comment').each do |node|
-    (@comments ||= []) << OpenStruct.new(:comment => node.text, :indent => node.parent.parent.css('img')[0]['width'].to_i)
+  @comments = []
+  Nokogiri::HTML(HTTPartyProxy.get(url)).css('span.comment').each do |node|
+    @comments << OpenStruct.new(:comment => node.text, :indent => node.parent.parent.css('img')[0]['width'].to_i)
   end 
 end
 
@@ -55,8 +69,8 @@ def draw_in_box(message, startline, padding)
   l = @status_line_LENGTH - padding - 1
   lines = message.scan(/.{1,#{l}}\b|.{1,#{l}}/).map(&:strip)
   lines.each do |line|
-    break if startline >= @status_line - 1
-    write(startline, 0, '|' * padding + " #{line}")
+    break if startline >= @status_line - 2 
+    write(startline, 0, ' |' * padding + " #{line}")
     startline += 1
   end
   lines.length
@@ -74,10 +88,10 @@ def draw_stories
   @stories.each do |story|
     if (index - 2 == @cursor_pos) 
       Curses.attron(color_pair(COLOR_RED)|A_HORIZONTAL){
-        write(index, 2, story.title)
+        write(index, 0, pad('  ' + story.title))
       }
     else 
-      write(index, 2, story.title)
+      write(index, 0, pad('  ' + story.title))
     end
     index += 1
   end
@@ -100,21 +114,29 @@ def draw_title_bar
   }
 end
 
+def clear_screen
+  Curses.clear
+  Curses.refresh
+end
+
 init_screen do
 
   load_stories_from_server
 
   loop do
-    Curses.clear
-    Curses.refresh
     @current_screen == 'comments' ? draw_comments : draw_stories 
     draw_title_bar
     draw_bottom_bar
     case Curses.getch
       when Curses::Key::UP then @cursor_pos = @cursor_pos - 1 < 0 ? @stories.length - 1 : @cursor_pos - 1 
       when Curses::Key::DOWN then @cursor_pos = (@cursor_pos + 1) % @stories.length 
+      when Curses::Key::LEFT then 
+        @current_screen = 'stories' 
+        clear_screen
+        load_stories_from_server
       when ENTER_KEY then 
         @current_screen = 'comments' 
+        clear_screen
         load_comments_from_server(@stories[@cursor_pos].comments_url) 
       when ?r then load_stories_from_server 
       when ?q then break
