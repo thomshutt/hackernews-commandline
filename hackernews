@@ -4,6 +4,8 @@ require 'httparty'
 require 'nokogiri'
 include Curses
 
+ENTER_KEY = 10
+
 @base_url = 'https://news.ycombinator.com/'
 
 class HttpPartyProxy
@@ -51,14 +53,19 @@ end
 
 def draw_in_box(message, startline, padding)
   l = @status_line_LENGTH - padding - 1
-  message.scan(/.{1,#{l}}\b|.{1,#{l}}/).map(&:strip).each do |part|
-    write(startline, 0, '|' * padding + " #{part}")
+  lines = message.scan(/.{1,#{l}}\b|.{1,#{l}}/).map(&:strip)
+  lines.each do |line|
+    write(startline, 0, '|' * padding + " #{line}")
     startline += 1
   end
+  lines.length
 end
 
 def draw_comments
-  
+  index = 2 
+  @comments.each do |comment|
+    index += draw_in_box(comment.comment, index, comment.indent / 40) 
+  end 
 end
 
 def draw_stories
@@ -97,15 +104,19 @@ init_screen do
   load_stories_from_server
 
   loop do
-    draw_stories 
+    Curses.clear
+    Curses.refresh
+    @current_screen == 'comments' ? draw_comments : draw_stories 
     draw_title_bar
     draw_bottom_bar
     case Curses.getch
       when Curses::Key::UP then @cursor_pos = @cursor_pos - 1 < 0 ? @stories.length - 1 : @cursor_pos - 1 
       when Curses::Key::DOWN then @cursor_pos = (@cursor_pos + 1) % @stories.length 
+      when ENTER_KEY then 
+        @current_screen = 'comments' 
+        load_comments_from_server(@stories[@cursor_pos].comments_url) 
       when ?r then load_stories_from_server 
       when ?q then break
-      else 
     end
   end
 
