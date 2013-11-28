@@ -55,6 +55,7 @@ def draw_in_box(message, startline, padding)
   l = @status_line_LENGTH - padding - 1
   lines = message.scan(/.{1,#{l}}\b|.{1,#{l}}/).map(&:strip)
   lines.each do |line|
+    break if startline >= @status_line - 1
     write(startline, 0, '|' * padding + " #{line}")
     startline += 1
   end
@@ -64,7 +65,7 @@ end
 def draw_comments
   index = 2 
   @comments.each do |comment|
-    index += draw_in_box(comment.comment, index, comment.indent / 40) 
+    index += draw_in_box(comment.comment, index, comment.indent / 40) + 1
   end 
 end
 
