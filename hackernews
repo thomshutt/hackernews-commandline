@@ -8,6 +8,8 @@ include Curses
 
 ENTER_KEY = 10
 BASE_URL = 'https://news.ycombinator.com/'
+MAX_STORIES = 20
+STORY_RELOAD_INTERVAL_MILLIS = 60 * 1000
 
 class HTTPartyProxy
   include HTTParty
@@ -45,8 +47,9 @@ def load_stories_from_server
       points = node.parent.parent.next_sibling.css("span").text.gsub(/ points/, '')
       @stories << OpenStruct.new(:points => points, :title => node.text, :url => node["href"], :comments_url => BASE_URL + comments_url)
     end
-    break if @stories.size == 20
+    break if @stories.size == MAX_STORIES
   end 
+  @last_load_time_millis = Time.now.to_i
 end
 def load_comments_from_server(url)
   comments = []
@@ -139,9 +142,10 @@ end
 
 init_screen do
 
-  load_stories_from_server
-
   loop do
+    if (@last_load_time_millis ||= 0) < Time.now.to_i - STORY_RELOAD_INTERVAL_MILLIS
+      load_stories_from_server
+    end
     @current_screen == 'comments' ? draw_comments : draw_stories 
     draw_title_bar
     draw_bottom_bar
@@ -161,7 +165,6 @@ init_screen do
       when Curses::Key::LEFT then 
         @current_screen = 'stories' 
         clear_screen
-        load_stories_from_server
       when ENTER_KEY then 
         @current_screen = 'comments' 
         @comment_firstline = 0
