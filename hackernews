@@ -22,16 +22,25 @@ opts_parser = OptionParser.new do |opts|
   opts.on("-p", "--proxy-port proxy_port", "The proxy port to use") do |proxy_port|
     @proxy_port = proxy_port
   end
+  opts.on("-t", "--test", "Whether to run in test mode (with mocked assets)") do |test|
+    @test_mode = true
+  end
 end
 opts_parser.parse!
 
-def load_stories_from_server 
+def get_stories_html
+  return File.open("mockStories.html", "rb").read if @test_mode
   HTTPartyProxy.http_proxy(@proxy_host, @proxy_port.to_i) if @proxy_host
-  response = HTTPartyProxy.get(@base_url)
-  return if response.body == @previous_body
-  @previous_body = response.body
+  return HTTPartyProxy.get(@base_url).body
+end
+def get_comments_html(url)
+  return File.open("mockComments.html", "rb").read if @test_mode
+  return HTTPartyProxy.get(url).body
+end
+
+def load_stories_from_server 
   @stories = []
-  Nokogiri::HTML(response.body).css("td.title a").each do |node|
+  Nokogiri::HTML(get_stories_html).css("td.title a").each do |node|
     unless node.text == "More"
       comments_url = node.parent.parent.next_sibling.css("a")[1]['href']
       points = node.parent.parent.next_sibling.css("span").text.gsub(/ points/, '')
@@ -41,10 +50,30 @@ def load_stories_from_server
   end 
 end
 def load_comments_from_server(url)
-  @comments = []
-  Nokogiri::HTML(HTTPartyProxy.get(url)).css('span.comment').each do |node|
-    @comments << OpenStruct.new(:comment => node.text, :indent => node.parent.parent.css('img')[0]['width'].to_i)
+  comments = []
+  Nokogiri::HTML(get_comments_html(url)).css('span.comment').each do |node|
+    comments << OpenStruct.new(:comment => node.text.gsub(/^ /, ""), :indent => node.parent.parent.css('img')[0]['width'].to_i / 40)
   end 
+  @comment_lines = []
+  comments.each do |comment|
+    lines = split_comment_into_lines(comment.comment, @screen_width - comment.indent - 2) 
+    @comment_lines << lines.map{ |line| " #{"|" * comment.indent}#{comment.indent > 0 ? " " : ""}#{line}" }
+  end
+  @comment_lines.flatten!
+end
+
+def split_comment_into_lines(comment, line_length)
+  current_line = ""
+  lines = []
+  comment.split(" ").each do |part|
+    if (current_line + "#{part} ").length > line_length
+      lines << current_line 
+      current_line = "#{part }"
+    else 
+      current_line += "#{part} "
+    end 
+  end
+  lines << current_line
 end
 
 def init_screen
@@ -55,8 +84,8 @@ def init_screen
   Curses.init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK) 
   Curses.init_pair(COLOR_RED, COLOR_WHITE, COLOR_RED)
   Curses::timeout = 60 * 1000 # How often to fetch from the server if no keys have been pressed    
-  @status_line = Curses.lines
-  @status_line_LENGTH = Curses.cols
+  @screen_height = Curses.lines
+  @screen_width = Curses.cols
   @cursor_pos = 0
   begin
     yield
@@ -65,22 +94,11 @@ def init_screen
   end
 end
 
-def draw_in_box(message, startline, padding)
-  l = @status_line_LENGTH - padding - 1
-  lines = message.scan(/.{1,#{l}}\b|.{1,#{l}}/).map(&:strip)
-  lines.each do |line|
-    break if startline >= @status_line - 2 
-    write(startline, 0, ' |' * padding + " #{line}")
-    startline += 1
-  end
-  lines.length
-end
-
 def draw_comments
-  index = 2 
-  @comments.each do |comment|
-    index += draw_in_box(comment.comment, index, comment.indent / 40) + 1
-  end 
+  @comment_lines.each_with_index { |line, index|
+    line_num = index + 2 + @comment_firstline
+    write(line_num, 0, pad(line)) if line_num < @screen_height - 2 && line_num >= 2
+  }
 end
 
 def draw_stories
@@ -102,11 +120,12 @@ def write(line, column, text)
   Curses.addstr(text);
 end
 def pad(message)
-  message + " " * (@status_line_LENGTH - message.length)
+  message + " " * (@screen_width - message.length)
 end
 
 def draw_bottom_bar
-  write(@status_line - 1, 0, "q=Quit r=Reload")
+  write(@screen_height - 1, 0, "[q = Quit] [r = Refresh] [Enter = View Comments]") if @current_screen != 'comments'
+  write(@screen_height - 1, 0, "[q = Quit] [Left Arrow = Back] [Up Arrow = Scroll Up] [Down Arrow = Scroll Down]") if @current_screen == 'comments'
 end
 def draw_title_bar
   Curses.attron(color_pair(COLOR_RED)|A_HORIZONTAL){
@@ -128,14 +147,25 @@ init_screen do
     draw_title_bar
     draw_bottom_bar
     case Curses.getch
-      when Curses::Key::UP then @cursor_pos = @cursor_pos - 1 < 0 ? @stories.length - 1 : @cursor_pos - 1 
-      when Curses::Key::DOWN then @cursor_pos = (@cursor_pos + 1) % @stories.length 
+      when Curses::Key::UP then 
+        if @current_screen == 'comments'
+          @comment_firstline = @comment_firstline == 0 ? 0 : @comment_firstline + 1
+        else
+          @cursor_pos = @cursor_pos - 1 < 0 ? @stories.length - 1 : @cursor_pos - 1 
+        end
+      when Curses::Key::DOWN then 
+        if @current_screen == 'comments'
+          @comment_firstline = (@comment_lines.length + 3 - @screen_height + @comment_firstline) < 0 ? @comment_firstline : @comment_firstline - 1
+        else
+          @cursor_pos = (@cursor_pos + 1) % @stories.length 
+        end
       when Curses::Key::LEFT then 
         @current_screen = 'stories' 
         clear_screen
         load_stories_from_server
       when ENTER_KEY then 
         @current_screen = 'comments' 
+        @comment_firstline = 0
         clear_screen
         load_comments_from_server(@stories[@cursor_pos].comments_url) 
       when ?r then load_stories_from_server 
