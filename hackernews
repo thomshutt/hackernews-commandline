@@ -7,8 +7,7 @@ require "optparse"
 include Curses
 
 ENTER_KEY = 10
-
-@base_url = 'https://news.ycombinator.com/'
+BASE_URL = 'https://news.ycombinator.com/'
 
 class HTTPartyProxy
   include HTTParty
@@ -31,7 +30,7 @@ opts_parser.parse!
 def get_stories_html
   return File.open("mockStories.html", "rb").read if @test_mode
   HTTPartyProxy.http_proxy(@proxy_host, @proxy_port.to_i) if @proxy_host
-  return HTTPartyProxy.get(@base_url).body
+  return HTTPartyProxy.get(BASE_URL).body
 end
 def get_comments_html(url)
   return File.open("mockComments.html", "rb").read if @test_mode
@@ -44,7 +43,7 @@ def load_stories_from_server
     unless node.text == "More"
       comments_url = node.parent.parent.next_sibling.css("a")[1]['href']
       points = node.parent.parent.next_sibling.css("span").text.gsub(/ points/, '')
-      @stories << OpenStruct.new(:points => points, :title => node.text, :url => node["href"], :comments_url => @base_url + comments_url)
+      @stories << OpenStruct.new(:points => points, :title => node.text, :url => node["href"], :comments_url => BASE_URL + comments_url)
     end
     break if @stories.size == 20
   end 
