@@ -166,7 +166,7 @@ init_screen do
       when Curses::Key::LEFT then 
         @current_screen = 'stories' 
         clear_screen
-      when ENTER_KEY then 
+      when ENTER_KEY, Curses::Key::RIGHT then 
         @current_screen = 'comments' 
         @comment_firstline = 0
         clear_screen
