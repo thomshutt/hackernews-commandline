@@ -60,6 +60,7 @@ def load_comments_from_server(url)
   comments.each do |comment|
     lines = split_comment_into_lines(comment.comment, @screen_width - comment.indent - 2) 
     @comment_lines << lines.map{ |line| " #{"|" * comment.indent}#{comment.indent > 0 ? " " : ""}#{line}" }
+    @comment_lines << pad('')
   end
   @comment_lines.flatten!
 end
