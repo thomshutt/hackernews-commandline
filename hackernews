@@ -9,7 +9,7 @@ include Curses
 
 ENTER_KEY = 10
 BASE_URL = 'https://news.ycombinator.com/'
-MAX_STORIES = 20
+MAX_STORIES = 30 
 STORY_RELOAD_INTERVAL_MILLIS = 60 * 1000
 
 class HTTPartyProxy
@@ -46,7 +46,8 @@ def load_stories_from_server
     unless node.text == "More"
       comments_url = node.parent.parent.next_sibling.css("a")[1]['href']
       points = node.parent.parent.next_sibling.css("span").text.gsub(/ points/, '')
-      @stories << OpenStruct.new(:points => points, :title => node.text, :url => node["href"], :comments_url => BASE_URL + comments_url)
+      url = node["href"].start_with?('item') ? BASE_URL + node["href"] : node["href"]
+      @stories << OpenStruct.new(:points => points, :title => node.text, :url => url, :comments_url => BASE_URL + comments_url)
     end
     break if @stories.size == MAX_STORIES
   end 
