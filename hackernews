@@ -3,6 +3,7 @@ require 'curses'
 require 'httparty'
 require 'nokogiri'
 require "optparse"
+require 'launchy'
 
 include Curses
 
@@ -127,13 +128,18 @@ def pad(message)
 end
 
 def draw_bottom_bar
-  write(@screen_height - 1, 0, "[q = Quit] [r = Refresh] [Enter = View Comments]") if @current_screen != 'comments'
+  write(@screen_height - 1, 0, "[q = Quit] [r = Refresh] [a = Launch Story In Browser] [Enter = View Comments]") if @current_screen != 'comments'
   write(@screen_height - 1, 0, "[q = Quit] [Left Arrow = Back] [Up Arrow = Scroll Up] [Down Arrow = Scroll Down]") if @current_screen == 'comments'
 end
 def draw_title_bar
   Curses.attron(color_pair(COLOR_RED)|A_HORIZONTAL){
     write(0, 0, pad(" Hacker News"))
   }
+end
+def draw_screen 
+  @current_screen == 'comments' ? draw_comments : draw_stories 
+  draw_title_bar
+  draw_bottom_bar
 end
 
 def clear_screen
@@ -147,9 +153,7 @@ init_screen do
     if (@last_load_time_millis ||= 0) < Time.now.to_i - STORY_RELOAD_INTERVAL_MILLIS
       load_stories_from_server
     end
-    @current_screen == 'comments' ? draw_comments : draw_stories 
-    draw_title_bar
-    draw_bottom_bar
+    draw_screen
     case Curses.getch
       when Curses::Key::UP then 
         if @current_screen == 'comments'
@@ -171,6 +175,8 @@ init_screen do
         @comment_firstline = 0
         clear_screen
         load_comments_from_server(@stories[@cursor_pos].comments_url) 
+      when ?a then
+        Launchy.open(@stories[@cursor_pos].url)
       when ?r then load_stories_from_server 
       when ?q then break
     end
