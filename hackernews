@@ -25,18 +25,18 @@ opts_parser = OptionParser.new do |opts|
     @proxy_port = proxy_port
   end
   opts.on("-t", "--test", "Whether to run in test mode (with mocked assets)") do |test|
-    @test_mode = true
+    @is_test_mode = true
   end
 end
 opts_parser.parse!
 
 def get_stories_html
-  return File.open("mockStories.html", "rb").read if @test_mode
+  return File.open("mockStories.html", "rb").read if @is_test_mode
   HTTPartyProxy.http_proxy(@proxy_host, @proxy_port.to_i) if @proxy_host
   return HTTPartyProxy.get(BASE_URL).body
 end
 def get_comments_html(url)
-  return File.open("mockComments.html", "rb").read if @test_mode
+  return File.open("mockComments.html", "rb").read if @is_test_mode
   return HTTPartyProxy.get(url).body
 end
 
@@ -56,29 +56,31 @@ end
 def load_comments_from_server(url)
   comments = []
   Nokogiri::HTML(get_comments_html(url)).css('span.comment').each do |node|
-    comments << OpenStruct.new(:comment => node.text.gsub(/^ /, ""), :indent => (node.parent.parent.css('img')[0]['width'].to_i / 40) + 1)
+    comments << OpenStruct.new(:comment => node.text, :indent => (node.parent.parent.css('img')[0]['width'].to_i / 40) + 1)
   end 
   @comment_lines = []
   comments.each do |comment|
     lines = split_comment_into_lines(comment.comment, @screen_width - comment.indent - 2) 
-    @comment_lines << lines.map{ |line| " #{"|" * comment.indent}#{comment.indent > 0 ? " " : ""}#{line}" }
-    @comment_lines << pad('')
+    @comment_lines << lines.map{ |line| " #{"|" * comment.indent}#{comment.indent > 0 ? " " : ""}#{line}" } << pad('')
   end
   @comment_lines.flatten!
 end
 
 def split_comment_into_lines(comment, line_length)
-  current_line = ""
   lines = []
-  comment.split(" ").each do |part|
-    if (current_line + "#{part} ").length > line_length
-      lines << current_line 
-      current_line = "#{part }"
-    else 
-      current_line += "#{part} "
-    end 
+  comment.split("\n").each do |newline|
+    current_line = ""
+    newline.split(" ").each do |part|
+      if (current_line + "#{part} ").length > line_length
+        lines << current_line 
+        current_line = "#{part }"
+      else 
+        current_line += "#{part} "
+      end 
+    end
+    lines << current_line
   end
-  lines << current_line
+  lines
 end
 
 def init_screen
@@ -86,7 +88,6 @@ def init_screen
   Curses.init_screen
   Curses.stdscr.keypad(true) # enable arrow keys
   Curses.start_color
-  Curses.init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK) 
   Curses.init_pair(COLOR_RED, COLOR_WHITE, COLOR_RED)
   Curses::timeout = 60 * 1000 # How often to fetch from the server if no keys have been pressed    
   @screen_height = Curses.lines
