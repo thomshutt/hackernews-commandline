@@ -54,7 +54,7 @@ end
 def load_comments_from_server(url)
   comments = []
   Nokogiri::HTML(get_comments_html(url)).css('span.comment').each do |node|
-    comments << OpenStruct.new(:comment => node.text.gsub(/^ /, ""), :indent => node.parent.parent.css('img')[0]['width'].to_i / 40)
+    comments << OpenStruct.new(:comment => node.text.gsub(/^ /, ""), :indent => (node.parent.parent.css('img')[0]['width'].to_i / 40) + 1)
   end 
   @comment_lines = []
   comments.each do |comment|
