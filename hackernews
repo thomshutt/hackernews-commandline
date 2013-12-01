@@ -11,6 +11,8 @@ ENTER_KEY = 10
 BASE_URL = 'https://news.ycombinator.com/'
 MAX_STORIES = 30 
 STORY_RELOAD_INTERVAL_MILLIS = 60 * 1000
+STORIES_PAGE_BOTTOM_BAR = '[q = Quit] [r = Refresh] [a = Launch Story In Browser] [Enter = View Comments]'
+COMMENTS_PAGE_BOTTOM_BAR = '[q = Quit] [Left Arrow = Back] [Up Arrow = Scroll Up] [Down Arrow = Scroll Down]'
 
 class HTTPartyProxy
   include HTTParty
@@ -41,6 +43,7 @@ def get_comments_html(url)
 end
 
 def load_stories_from_server 
+  return if (@last_load_time_millis ||= 0) > (Time.now.to_i - STORY_RELOAD_INTERVAL_MILLIS)
   @stories = []
   Nokogiri::HTML(get_stories_html).css("td.title a").each do |node|
     unless node.text == "More"
@@ -106,7 +109,6 @@ def draw_comments
     write(line_num, 0, pad(line)) if line_num < @screen_height - 2 && line_num >= 2
   }
 end
-
 def draw_stories
   index = 2 
   @stories.each do |story|
@@ -129,21 +131,17 @@ def pad(message)
   message + " " * (@screen_width - message.length)
 end
 
-def draw_bottom_bar
-  write(@screen_height - 1, 0, "[q = Quit] [r = Refresh] [a = Launch Story In Browser] [Enter = View Comments]") if @current_screen != 'comments'
-  write(@screen_height - 1, 0, "[q = Quit] [Left Arrow = Back] [Up Arrow = Scroll Up] [Down Arrow = Scroll Down]") if @current_screen == 'comments'
-end
-def draw_title_bar
-  Curses.attron(color_pair(COLOR_RED)|A_HORIZONTAL){
-    write(0, 0, pad(" Hacker News"))
-  }
-end
 def draw_screen 
   @current_screen == 'comments' ? draw_comments : draw_stories 
   draw_title_bar
   draw_bottom_bar
 end
-
+def draw_title_bar
+  Curses.attron(color_pair(COLOR_RED)|A_HORIZONTAL){ write(0, 0, pad(" Hacker News")) }
+end
+def draw_bottom_bar
+  write(@screen_height - 1, 0, @current_screen == 'comments' ? COMMENTS_PAGE_BOTTOM_BAR : STORIES_PAGE_BOTTOM_BAR) 
+end
 def clear_screen
   Curses.clear
   Curses.refresh
@@ -152,9 +150,7 @@ end
 init_screen do
 
   loop do
-    if (@last_load_time_millis ||= 0) < Time.now.to_i - STORY_RELOAD_INTERVAL_MILLIS
-      load_stories_from_server
-    end
+    load_stories_from_server
     draw_screen
     case Curses.getch
       when Curses::Key::UP then 
